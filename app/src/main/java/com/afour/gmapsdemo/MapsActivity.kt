@@ -1,70 +1,109 @@
 package com.afour.gmapsdemo
 
 import android.Manifest
+import android.content.IntentSender
 import android.content.pm.PackageManager
 import android.location.Address
 import android.location.Geocoder
 import android.os.Bundle
 import android.util.Log
 import android.view.WindowManager
-import android.view.inputmethod.EditorInfo
 import android.widget.EditText
 import android.widget.ImageView
-import android.widget.TextView
 import android.widget.Toast
 import androidx.appcompat.app.AppCompatActivity
 import androidx.core.app.ActivityCompat
 import androidx.core.content.ContextCompat
-import com.google.android.gms.location.FusedLocationProviderClient
-import com.google.android.gms.location.LocationServices
+import com.google.android.gms.common.api.ApiException
+import com.google.android.gms.common.api.ResolvableApiException
+import com.google.android.gms.common.api.Status
+import com.google.android.gms.location.*
 import com.google.android.gms.maps.CameraUpdateFactory
 import com.google.android.gms.maps.GoogleMap
 import com.google.android.gms.maps.OnMapReadyCallback
 import com.google.android.gms.maps.SupportMapFragment
 import com.google.android.gms.maps.model.LatLng
 import com.google.android.gms.maps.model.MarkerOptions
+import com.google.android.libraries.places.api.Places
+import com.google.android.libraries.places.api.model.Place
+import com.google.android.libraries.places.api.net.PlacesClient
+import com.google.android.libraries.places.widget.AutocompleteSupportFragment
+import com.google.android.libraries.places.widget.listener.PlaceSelectionListener
 import kotlinx.android.synthetic.main.activity_maps.*
 import java.io.IOException
+import java.util.*
 
 class MapsActivity : AppCompatActivity(), OnMapReadyCallback {
 
     private lateinit var mMap: GoogleMap
     private lateinit var fusedLocationClient: FusedLocationProviderClient
-    private lateinit var searchCityEditText: EditText
-    private lateinit var searchImage: ImageView
     private lateinit var gpsImage: ImageView
+    private lateinit var infoImage: ImageView
+    private lateinit var placesClient: PlacesClient
+    private lateinit var placesDetails : Place
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         setContentView(R.layout.activity_maps)
-        searchCityEditText = editText
-        searchImage = img_search_places
         gpsImage = image_gps
+        infoImage = image_info
+        enablegps()
         getLocationPermission()
         initWidgets()
+        setUpAutoCompleteFragment()
+    }
+
+    private fun setUpAutoCompleteFragment() {
+        Places.initialize(applicationContext, "AIzaSyCtWsDUTFC72cDdrfsqCPAtyEmstBgRW9w")
+        placesClient = Places.createClient(this@MapsActivity)
+
+        val placeSelectionHandler = object : PlaceSelectionListener {
+            override fun onPlaceSelected(place: Place) {
+                Log.e(
+                    "placeSelectionHandler", "Place: " + place.name + ", "
+                            + place.id
+                )
+                Log.e("placeSelectionHandler", place.phoneNumber)
+                placesDetails = place
+                showLocationDetails(place)
+            }
+
+            override fun onError(error: Status) {
+                Log.e("placeSelection-->", error.isSuccess.toString())
+            }
+
+        }
+
+        val autoCompleteFragment = supportFragmentManager
+            .findFragmentById(R.id.autocomplete_fragment) as AutocompleteSupportFragment
+        autoCompleteFragment.setHint("Search for city or place")
+        autoCompleteFragment.setPlaceFields(Arrays.asList(Place.Field.ID, Place.Field.NAME, Place.Field.PHONE_NUMBER))
+        autoCompleteFragment.setOnPlaceSelectedListener(placeSelectionHandler)
     }
 
     private fun initWidgets() {
         Log.e("initWidgets", "initializing widgets")
-        editText.setOnEditorActionListener(TextView.OnEditorActionListener { v, actionId, event ->
-            Log.e("setOnEditor", "setOnEditorActionListener")
-            if (actionId == EditorInfo.IME_ACTION_DONE) {
-                Log.e("actionId", "setOnEditorActionListener")
-                geoLocate()
-                return@OnEditorActionListener true
-            }
-            false
-        })
+
         gpsImage.setOnClickListener {
             getDeviceLocation()
+        }
+
+        infoImage.setOnClickListener {
+            showLocationDetails(placesDetails)
         }
         hideSoftKeyboard()
     }
 
-    private fun geoLocate() {
+    private fun showLocationDetails(selectedLocation: Place) {
+        placesDetails = selectedLocation
+        var placeDetailsInfo = selectedLocation.name + selectedLocation.phoneNumber
+        geoLocate(placeDetailsInfo)
+    }
+
+    private fun geoLocate(input: String?) {
         Log.e("geoLocate", "calling  geoLocate")
         var geocoder = Geocoder(this@MapsActivity)
         var listOfAddresses = arrayListOf<Address>()
-        var searchString = searchCityEditText.text.toString()
+        var searchString = input
         Log.e("geoLocate", "searchString is $searchString")
         try {
             listOfAddresses = geocoder.getFromLocationName(searchString, 1) as ArrayList<Address>
@@ -126,10 +165,62 @@ class MapsActivity : AppCompatActivity(), OnMapReadyCallback {
 
             mMap.addMarker(markerOption)
         }
-
         hideSoftKeyboard()
     }
 
+    fun enablegps() {
+
+        val mLocationRequest = LocationRequest.create()
+            .setPriority(LocationRequest.PRIORITY_HIGH_ACCURACY)
+            .setInterval(2000)
+            .setFastestInterval(1000)
+
+        val settingsBuilder = LocationSettingsRequest.Builder()
+            .addLocationRequest(mLocationRequest)
+        settingsBuilder.setAlwaysShow(true)
+
+        val result = LocationServices.getSettingsClient(this).checkLocationSettings(settingsBuilder.build())
+        result.addOnCompleteListener { task ->
+
+            //getting the status code from exception
+            try {
+                task.getResult(ApiException::class.java)
+            } catch (ex: ApiException) {
+
+                when (ex.statusCode) {
+
+                    LocationSettingsStatusCodes.RESOLUTION_REQUIRED -> try {
+
+                        Toast.makeText(this, "GPS IS OFF", Toast.LENGTH_SHORT).show()
+
+                        // Show the dialog by calling startResolutionForResult(), and check the result
+                        // in onActivityResult().
+                        val resolvableApiException = ex as ResolvableApiException
+                        resolvableApiException.startResolutionForResult(
+                            this, REQUEST_CHECK_SETTINGS
+                        )
+                    } catch (e: IntentSender.SendIntentException) {
+                        Toast.makeText(this, "PendingIntent unable to execute request.", Toast.LENGTH_SHORT).show()
+
+                    }
+
+                    LocationSettingsStatusCodes.SETTINGS_CHANGE_UNAVAILABLE -> {
+
+                        Toast.makeText(
+                            this,
+                            "Something is wrong in your GPS",
+                            Toast.LENGTH_SHORT
+                        ).show()
+
+                    }
+
+
+                }
+            }
+
+
+        }
+    }
 
     private fun getLocationPermission() {
         var locationPermissions = arrayOf(
@@ -187,8 +278,6 @@ class MapsActivity : AppCompatActivity(), OnMapReadyCallback {
     override fun onMapReady(googleMap: GoogleMap) {
         mMap = googleMap
         Log.e("MapsActivity", "### onMapReady")
-        // Add a marker in Sydney and move the camera
-
         if (isPermissionGranted) {
             getDeviceLocation()
             if (ContextCompat.checkSelfPermission(this.applicationContext, FINE_LOCATION)
@@ -196,16 +285,11 @@ class MapsActivity : AppCompatActivity(), OnMapReadyCallback {
             )
                 mMap.isMyLocationEnabled = true
         }
-        /*val sydney = LatLng(-34.0, 151.0)
-        mMap.addMarker(MarkerOptions().position(sydney).title("Marker in Sydney"))
-        mMap.moveCamera(CameraUpdateFactory.newLatLng(sydney))*/
     }
 
 
-    fun hideSoftKeyboard() {
+    private fun hideSoftKeyboard() {
         this.window.setSoftInputMode(WindowManager.LayoutParams.SOFT_INPUT_STATE_ALWAYS_HIDDEN)
-
-
     }
 
     companion object {
@@ -214,5 +298,6 @@ class MapsActivity : AppCompatActivity(), OnMapReadyCallback {
         const val LOCATION_PERMISSION_REQUEST_CODE = 1234
         var isPermissionGranted = false
         const val DEFAULT_ZOOM = 15f
+        const val REQUEST_CHECK_SETTINGS =1
     }
 }
