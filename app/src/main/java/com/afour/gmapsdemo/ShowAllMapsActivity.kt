@@ -3,11 +3,11 @@ package com.afour.gmapsdemo
 import android.Manifest
 import android.content.IntentSender
 import android.content.pm.PackageManager
-import android.location.Address
-import android.location.Geocoder
 import android.os.Bundle
 import android.util.Log
 import android.view.WindowManager
+import android.view.inputmethod.EditorInfo
+import android.widget.EditText
 import android.widget.ImageView
 import android.widget.Toast
 import androidx.appcompat.app.AppCompatActivity
@@ -15,7 +15,6 @@ import androidx.core.app.ActivityCompat
 import androidx.core.content.ContextCompat
 import com.google.android.gms.common.api.ApiException
 import com.google.android.gms.common.api.ResolvableApiException
-import com.google.android.gms.common.api.Status
 import com.google.android.gms.location.*
 import com.google.android.gms.maps.CameraUpdateFactory
 import com.google.android.gms.maps.GoogleMap
@@ -24,101 +23,109 @@ import com.google.android.gms.maps.SupportMapFragment
 import com.google.android.gms.maps.model.LatLng
 import com.google.android.gms.maps.model.MarkerOptions
 import com.google.android.libraries.places.api.Places
+import com.google.android.libraries.places.api.model.AutocompleteSessionToken
 import com.google.android.libraries.places.api.model.Place
+import com.google.android.libraries.places.api.net.FetchPlaceRequest
+import com.google.android.libraries.places.api.net.FindAutocompletePredictionsRequest
 import com.google.android.libraries.places.api.net.PlacesClient
-import com.google.android.libraries.places.widget.AutocompleteSupportFragment
-import com.google.android.libraries.places.widget.listener.PlaceSelectionListener
-import kotlinx.android.synthetic.main.activity_maps.*
-import java.io.IOException
+import kotlinx.android.synthetic.main.activity_showallmaps.*
 import java.util.*
 
-class MapsActivity : AppCompatActivity(), OnMapReadyCallback {
+class ShowAllMapsActivity : AppCompatActivity(), OnMapReadyCallback {
 
     private lateinit var googleMap: GoogleMap
     private lateinit var fusedLocationClient: FusedLocationProviderClient
-    private lateinit var gpsImage: ImageView
-    private lateinit var infoImage: ImageView
     private lateinit var placesClient: PlacesClient
-    private lateinit var placesDetails : Place
+    private lateinit var searchText: EditText
+    private lateinit var filterResults : ImageView
+
+
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
-        setContentView(R.layout.activity_maps)
-        gpsImage = image_gps
-        infoImage = image_info
+        setContentView(R.layout.activity_showallmaps)
         enableGPS()
         getLocationPermission()
-        initWidgets()
-        setUpAutoCompleteFragment()
+        init()
     }
 
-    private fun setUpAutoCompleteFragment() {
+
+    private fun init() {
         Places.initialize(applicationContext, "AIzaSyCtWsDUTFC72cDdrfsqCPAtyEmstBgRW9w")
-        placesClient = Places.createClient(this@MapsActivity)
+        placesClient = Places.createClient(this@ShowAllMapsActivity)
 
-        val placeSelectionHandler = object : PlaceSelectionListener {
-            override fun onPlaceSelected(place: Place) {
-                Log.e(
-                    "placeSelectionHandler", "Place: " + place.name + ", "
-                            + place.id
+        filterResults = image_filter
+        searchText = edit_input_text
+
+        filterResults.setOnClickListener {
+            googleMap.clear()
+        }
+
+
+        searchText.setOnEditorActionListener { v, actionId, event ->
+            if (actionId == EditorInfo.IME_ACTION_DONE
+                || actionId == EditorInfo.IME_ACTION_SEARCH
+            ) {
+                Log.e("init", "setOnEditorActionListener called")
+                //geoLocatePlace(searchText.text.toString())
+                getPlacePredictions(searchText.text.toString())
+                true
+            } else {
+                false
+            }
+        }
+    }
+
+    private fun getPlacePredictions(query: String) {
+        googleMap.clear()
+        var token = AutocompleteSessionToken.newInstance()
+        var request = FindAutocompletePredictionsRequest.builder()
+            .setSessionToken(token)
+            .setQuery(query)
+            .build()
+
+        placesClient.findAutocompletePredictions(request)
+            .addOnSuccessListener {
+                for (prediction in it.autocompletePredictions) {
+                    Log.e("addOnSuccessListener", prediction.placeId)
+                    Log.e("addOnSuccessListener", prediction.getPrimaryText(null).toString())
+                    geoLocatePlace(prediction.placeId)
+                }
+            }
+            .addOnFailureListener {
+                Log.e("addOnFailureListener", "Place not found: " + it as ApiException)
+            }
+    }
+
+    private fun geoLocatePlace(input: String) {
+        Log.e("geoLocatePlace", "geoLocatePlace called")
+        var placeId = input
+        Log.e("geoLocatePlace", "Place ID is $placeId")
+        var listOfPlaces = Arrays.asList(
+            Place.Field.ID,
+            Place.Field.NAME,
+            Place.Field.ADDRESS,
+            Place.Field.LAT_LNG
+        )
+        val fetchPlaceRequest = FetchPlaceRequest.newInstance(placeId, listOfPlaces)
+
+        placesClient.fetchPlace(fetchPlaceRequest)
+            .addOnSuccessListener {
+                val place = it.place
+
+                Log.e("geoLocatePlace", "Place found: " + place.name)
+                drawMarkerOnMap(
+                    LatLng(place.latLng!!.latitude, place.latLng!!.longitude),
+                    place.address.toString()
                 )
-                placesDetails = place
-                showLocationDetails(place)
+                /*moveCamera(
+                    LatLng(place.latLng!!.latitude, place.latLng!!.longitude), DEFAULT_ZOOM,
+                    place.address.toString()
+                )*/
+            }.addOnFailureListener {
+                Log.e("geoLocatePlace failure", it.message)
             }
-
-            override fun onError(error: Status) {
-                Log.e("placeSelection-->", error.isSuccess.toString())
-            }
-
-        }
-
-        val autoCompleteFragment = supportFragmentManager
-            .findFragmentById(R.id.autocomplete_fragment) as AutocompleteSupportFragment
-        autoCompleteFragment.setHint("Search for city or place")
-        autoCompleteFragment.setPlaceFields(Arrays.asList(Place.Field.ID, Place.Field.NAME, Place.Field.PHONE_NUMBER))
-        autoCompleteFragment.setOnPlaceSelectedListener(placeSelectionHandler)
     }
 
-    private fun initWidgets() {
-        Log.e("initWidgets", "initializing widgets")
-
-        gpsImage.setOnClickListener {
-            getDeviceLocation()
-        }
-
-        infoImage.setOnClickListener {
-            showLocationDetails(placesDetails)
-        }
-        hideSoftKeyboard()
-    }
-
-    private fun showLocationDetails(selectedLocation: Place) {
-        placesDetails = selectedLocation
-        var placeDetailsInfo = selectedLocation.name + selectedLocation.phoneNumber
-        geoLocate(placeDetailsInfo)
-    }
-
-    private fun geoLocate(input: String?) {
-        Log.e("geoLocate", "calling  geoLocate")
-        var geocoder = Geocoder(this@MapsActivity)
-        var listOfAddresses = arrayListOf<Address>()
-        var searchString = input
-        Log.e("geoLocate", "searchString is $searchString")
-        try {
-            listOfAddresses = geocoder.getFromLocationName(searchString, 100) as ArrayList<Address>
-            if (listOfAddresses.size > 0) {
-                var address = listOfAddresses[0]
-                Log.e("geoLocate", "Address is == $address")
-
-                moveCamera(
-                    LatLng(address.latitude, address.longitude), DEFAULT_ZOOM,
-                    address.getAddressLine(0)
-                )
-            }
-        } catch (exception: IOException) {
-            exception.printStackTrace()
-        }
-
-    }
 
     private fun getDeviceLocation() {
         fusedLocationClient = LocationServices.getFusedLocationProviderClient(this)
@@ -140,7 +147,7 @@ class MapsActivity : AppCompatActivity(), OnMapReadyCallback {
 
                     } else {
                         Toast.makeText(
-                            this@MapsActivity, "Could not found location",
+                            this@ShowAllMapsActivity, "Could not found location",
                             Toast.LENGTH_LONG
                         ).show()
                     }
@@ -150,6 +157,17 @@ class MapsActivity : AppCompatActivity(), OnMapReadyCallback {
         } catch (exception: SecurityException) {
             exception.printStackTrace()
         }
+    }
+
+    private fun drawMarkerOnMap(latLong: LatLng,title: String) {
+        if (!title.run { equals("You Are Here") }) {
+            var markerOption = MarkerOptions()
+                .position(latLong)
+                .title(title)
+
+            googleMap.addMarker(markerOption)
+        }
+        hideSoftKeyboard()
     }
 
     private fun moveCamera(latLong: LatLng, zoom: Float, title: String) {
@@ -186,8 +204,11 @@ class MapsActivity : AppCompatActivity(), OnMapReadyCallback {
             } catch (ex: ApiException) {
 
                 when (ex.statusCode) {
+
                     LocationSettingsStatusCodes.RESOLUTION_REQUIRED -> try {
+
                         Toast.makeText(this, "GPS IS OFF", Toast.LENGTH_SHORT).show()
+
                         // Show the dialog by calling startResolutionForResult(), and check the result
                         // in onActivityResult().
                         val resolvableApiException = ex as ResolvableApiException
@@ -266,7 +287,7 @@ class MapsActivity : AppCompatActivity(), OnMapReadyCallback {
     private fun initMap() {
         // Obtain the SupportMapFragment and get notified when the map is ready to be used.
         val mapFragment = supportFragmentManager
-            .findFragmentById(R.id.map) as SupportMapFragment
+            .findFragmentById(R.id.showAllMaps) as SupportMapFragment
         mapFragment.getMapAsync(this)
     }
 
@@ -293,6 +314,6 @@ class MapsActivity : AppCompatActivity(), OnMapReadyCallback {
         const val LOCATION_PERMISSION_REQUEST_CODE = 1234
         var isPermissionGranted = false
         const val DEFAULT_ZOOM = 15f
-        const val REQUEST_CHECK_SETTINGS =1
+        const val REQUEST_CHECK_SETTINGS = 1
     }
 }

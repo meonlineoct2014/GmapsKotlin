@@ -6,13 +6,11 @@
             xmlns:tools="http://schemas.android.com/tools"
             android:layout_width="match_parent"
             android:layout_height="match_parent"
-            android:id="@+id/map"
+            android:id="@+id/showAllMaps"
             tools:context=".MapsActivity"
             android:name="com.google.android.gms.maps.SupportMapFragment"
             android:layout_alignParentStart="true"
             android:layout_alignParentTop="true"/>
-
-
     <RelativeLayout android:layout_width="match_parent"
                     android:layout_height="50dp"
                     android:id="@+id/layout_location_search"
@@ -21,32 +19,36 @@
                     android:layout_marginRight="10dp"
                     android:elevation="10dp"
                     android:background="@drawable/white_round_background">
-        <fragment android:id="@+id/autocomplete_fragment"
-                  android:layout_width="match_parent"
-                  android:layout_height="wrap_content"
-                  android:name="com.google.android.libraries.places.widget.AutocompleteSupportFragment"
-                  android:layout_marginStart="8dp"
+        <ImageView android:layout_width="15dp"
+                   android:layout_height="15dp"
+                   android:id="@+id/magnify"
+                   android:layout_centerVertical="true"
+                   android:layout_marginLeft="10dp"
+                   android:src="@drawable/ic_magnify"
+
+        />
+        <EditText android:layout_width="wrap_content"
+                  android:layout_height="match_parent"
+                  android:inputType="textPersonName"
+                  android:layout_toRightOf="@id/magnify"
+                  android:layout_centerVertical="true"
+                  android:textSize="15sp"
+                  android:maxLines="1"
+                  android:textColor="#000"
+                  android:layout_marginLeft="10dp"
+                  android:id="@+id/edit_input_text"
+                  android:hint="Enter address ciry or place"
+                  android:background="@drawable/white_round_background"
         />
     </RelativeLayout>
 
     <ImageView android:layout_width="40dp"
                android:layout_height="40dp"
-               android:id="@+id/image_gps"
+               android:id="@+id/image_filter"
                android:layout_below="@id/layout_location_search"
                android:layout_alignParentRight="true"
                android:layout_marginRight="20dp"
                android:layout_marginTop="20dp"
                android:scaleType="centerCrop"
-               android:src="@drawable/ic_gps_image"
-    />
-    <ImageView android:layout_width="40dp"
-               android:layout_height="40dp"
-               android:id="@+id/image_info"
-               android:layout_below="@id/layout_location_search"
-               android:layout_alignParentLeft="true"
-               android:layout_marginRight="20dp"
-               android:layout_marginTop="20dp"
-               android:scaleType="centerCrop"
-               android:src="@drawable/ic_info"
-    />
+               android:src="@drawable/ic_filter"/>
 </RelativeLayout>
